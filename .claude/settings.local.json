@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python3 -m http.server 3333)",
+      "Bash(curl -s http://localhost:3333/index.html)",
+      "mcp__Claude_in_Chrome__navigate",
+      "Bash(git --version)"
+    ]
+  }
+}
