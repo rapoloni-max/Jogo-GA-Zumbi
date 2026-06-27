@@ -702,9 +702,16 @@ class Boss {
     this.y  += this.vy;
     this.onGround = applyPlatformCollision(this, platforms);
 
-    // Limite de mapa
+    // Limite de mapa horizontal
     if (this.x < cameraX) this.x = cameraX;
     if (this.x + this.w > cameraX + W) this.x = cameraX + W - this.w;
+
+    // Segurança: se o chefe cair no buraco, volta para o chão
+    if (this.y > H) {
+      this.y = 350;
+      this.x = Math.max(cameraX + 100, Math.min(this.x, cameraX + W - this.w - 100));
+      this.vy = 0;
+    }
 
     this.animT++;
     if (this.animT >= 12) { this.animT = 0; this.animF = (this.animF + 1) % 4; }
@@ -943,12 +950,14 @@ function buildPhase(idx) {
       bg1: '#020d1c', bg2: '#051020',
       width: 4200,
       platforms: [
-        { x:0,    y:450, w:700,  h:60 },
-        { x:800,  y:450, w:350,  h:60 },
-        { x:1250, y:450, w:250,  h:60 },
-        { x:1600, y:450, w:350,  h:60 },
-        { x:2050, y:450, w:700,  h:60 },
-        { x:2850, y:450, w:1400, h:60 },
+        // Chão contínuo (chefes não caem mais)
+        { x:0,    y:450, w:4300, h:60 },
+        // Buracos como lava — só machucam o jogador, chefe passa por cima
+        { x:700,  y:438, w:100, h:22, spike:true },
+        { x:1150, y:438, w:100, h:22, spike:true },
+        { x:1500, y:438, w:100, h:22, spike:true },
+        { x:1950, y:438, w:100, h:22, spike:true },
+        { x:2750, y:438, w:100, h:22, spike:true },
         // Plataformas no ar
         { x:100,  y:360, w:100, h:18 },
         { x:380,  y:290, w:90,  h:18 },
