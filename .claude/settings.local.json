@@ -5,7 +5,11 @@
       "Bash(python3 -m http.server 3333)",
       "Bash(curl -s http://localhost:3333/index.html)",
       "mcp__Claude_in_Chrome__navigate",
-      "Bash(git --version)"
+      "Bash(git --version)",
+      "Bash(pkill -f \"python3 -m http.server 3333\")",
+      "Bash(curl -s http://localhost:3333/game.js)",
+      "Bash(node --check \"/Users/rapoloni/Desktop/Jogo GA Zumbi/game.js\")",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

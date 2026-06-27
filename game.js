@@ -187,6 +187,7 @@ class Projectile {
       player:  '#FFD700',
       magic:   '#FF6B00',
       special: '#00FFFF',
+      laser:   '#00e5ff',
       enemy:   '#e74c3c',
       boss:    '#9b59b6',
     };
@@ -224,7 +225,16 @@ class Item {
     const sx = this.x - cameraX;
     const sy = this.y + Math.sin(this.bobT) * 3;
 
-    const COL = { heart:'#e74c3c', coin:'#f1c40f', crystal:'#9b59b6', key:'#f39c12', shield:'#3498db' };
+    const COL = {
+      heart:'#e74c3c', coin:'#f1c40f', crystal:'#9b59b6',
+      key:'#f39c12',   shield:'#3498db',
+      // Novas armas e poderes
+      weapon2:'#e67e22',   // tiro duplo
+      weaponLaser:'#00e5ff', // laser
+      speedBoots:'#2ecc71',  // velocidade
+      superJump:'#9b59b6',   // super pulo
+      rage:'#e74c3c',        // dano dobrado temporário
+    };
     const col = COL[this.type] || '#fff';
 
     ctx.fillStyle = col;
@@ -232,7 +242,6 @@ class Item {
     ctx.shadowBlur = 8;
 
     if (this.type === 'heart') {
-      // Desenha um coração simples com quadradinhos
       ctx.fillRect(sx + 2, sy + 2, 8, 6);
       ctx.fillRect(sx + 12, sy + 2, 8, 6);
       ctx.fillRect(sx, sy + 6, 22, 8);
@@ -247,11 +256,24 @@ class Item {
       ctx.textAlign = 'center';
       ctx.fillText('$', sx + 11, sy + 15);
     } else {
+      // Caixa brilhante para armas e poderes especiais
+      const isSpecial = ['weapon2','weaponLaser','speedBoots','superJump','rage'].includes(this.type);
+      if (isSpecial) {
+        // Borda pulsante para itens especiais
+        const pulse = Math.sin(this.bobT * 2) * 2;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2 + pulse;
+        ctx.strokeRect(sx - 2, sy - 2, this.w + 4, this.h + 4);
+      }
       ctx.fillRect(sx, sy, this.w, this.h);
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'center';
-      const icons = { crystal:'✦', key:'🔑', shield:'🛡' };
+      const icons = {
+        crystal:'✦', key:'🔑', shield:'🛡',
+        weapon2:'✦✦', weaponLaser:'⚡', speedBoots:'👟',
+        superJump:'⬆', rage:'💢',
+      };
       ctx.fillText(icons[this.type] || '?', sx + 11, sy + 15);
     }
     ctx.shadowBlur = 0;
@@ -289,6 +311,15 @@ class Player {
     this.maxMana      = 100;
     this.specialCharge= 0;
 
+    // Modo de arma atual
+    this.weaponMode  = 'basic';  // 'basic' | 'double' | 'laser'
+    this.laserTimer  = 0;
+
+    // Poderes temporários
+    this.speedBoost     = 0;
+    this.superJumpTimer = 0;
+    this.rageTimer      = 0;
+
     // Cooldowns
     this.shootCD  = 0;
     this.magicCD  = 0;
@@ -300,22 +331,30 @@ class Player {
   }
 
   update() {
+    // ── Contagem regressiva dos poderes temporários ──────────
+    if (this.laserTimer  > 0) { this.laserTimer--;  if (this.laserTimer  === 0) this.weaponMode = 'basic'; }
+    if (this.speedBoost  > 0)   this.speedBoost--;
+    if (this.superJumpTimer > 0) this.superJumpTimer--;
+    if (this.rageTimer   > 0)   this.rageTimer--;
+
     // ── Movimento horizontal ──────────────────────────────
     const left  = keys['a'] || keys['ArrowLeft'];
     const right = keys['d'] || keys['ArrowRight'];
-    if (left)       { this.vx = -5; this.facing = -1; }
-    else if (right) { this.vx =  5; this.facing =  1; }
+    const spd = this.speedBoost > 0 ? 8 : 5;
+    if (left)       { this.vx = -spd; this.facing = -1; }
+    else if (right) { this.vx =  spd; this.facing =  1; }
     else            { this.vx *= 0.75; }
 
     // ── Pulo ─────────────────────────────────────────────
     if (jumpPressed) {
+      const jp = this.superJumpTimer > 0 ? JUMP_POWER * 1.5 : JUMP_POWER;
       if (this.onGround) {
-        this.vy = JUMP_POWER;
+        this.vy = jp;
         this.onGround = false;
         this.canDJump = true;
         playSound('jump');
       } else if (this.doubleJump && this.canDJump) {
-        this.vy = JUMP_POWER * 0.85;
+        this.vy = jp * 0.85;
         this.canDJump = false;
         playSound('jump');
       }
@@ -324,11 +363,22 @@ class Player {
     // ── Tiro ─────────────────────────────────────────────
     if (keys['j'] && this.shootCD <= 0) {
       const spd  = 9 + this.shootPower * 2;
-      const dmg  = 10 + this.shootPower * 8;
+      const dmgBase = 10 + this.shootPower * 8;
+      const dmg  = this.rageTimer > 0 ? dmgBase * 2 : dmgBase;
       const ox   = this.facing > 0 ? this.w : -8;
-      projs.push(new Projectile(this.x + ox, this.y + this.h / 2 - 4,
-        this.facing * spd, 0, 'player', dmg));
-      this.shootCD = this.shootPower > 1 ? 10 : 14;
+      const owner = this.weaponMode === 'laser' ? 'laser' : 'player';
+
+      if (this.weaponMode === 'double') {
+        // Dois tiros em paralelo
+        projs.push(new Projectile(this.x + ox, this.y + this.h / 2 - 8, this.facing * spd, 0, 'player', dmg));
+        projs.push(new Projectile(this.x + ox, this.y + this.h / 2 + 4, this.facing * spd, 0, 'player', dmg));
+      } else if (this.weaponMode === 'laser') {
+        // Laser: projétil mais rápido e maior
+        projs.push(new Projectile(this.x + ox, this.y + this.h / 2 - 4, this.facing * 16, 0, 'laser', dmg * 1.5));
+      } else {
+        projs.push(new Projectile(this.x + ox, this.y + this.h / 2 - 4, this.facing * spd, 0, 'player', dmg));
+      }
+      this.shootCD = this.weaponMode === 'double' ? 12 : this.shootPower > 1 ? 10 : 14;
       playSound('shoot');
     }
 
@@ -783,10 +833,13 @@ function buildPhase(idx) {
       midBossX: 1400, midBossType: 'midBoss1',
       bossX:    3100, bossType:    'boss1',
       items: [
-        {x:300,  y:420, t:'heart'},  {x:650,  y:420, t:'coin'},
-        {x:950,  y:420, t:'coin'},   {x:1200, y:240, t:'crystal'},
-        {x:1800, y:420, t:'heart'},  {x:2450, y:240, t:'coin'},
+        {x:300,  y:420, t:'heart'},   {x:650,  y:420, t:'coin'},
+        {x:950,  y:420, t:'coin'},    {x:1200, y:240, t:'crystal'},
+        {x:1800, y:420, t:'heart'},   {x:2450, y:240, t:'coin'},
         {x:2950, y:250, t:'key'},
+        // Armas e poderes da Fase 1
+        {x:700,  y:270, t:'weapon2'},     // tiro duplo atrás do 1º chefe
+        {x:2200, y:280, t:'speedBoots'},  // botas antes do chefe final
       ],
     },
 
@@ -826,6 +879,10 @@ function buildPhase(idx) {
         {x:900,  y:260, t:'coin'},  {x:1350, y:250, t:'crystal'},
         {x:1700, y:230, t:'heart'}, {x:2200, y:290, t:'coin'},
         {x:2650, y:310, t:'coin'},  {x:3100, y:260, t:'key'},
+        // Armas e poderes da Fase 2
+        {x:600,  y:330, t:'rage'},        // fúria no início
+        {x:1800, y:230, t:'weaponLaser'}, // laser após chefe médio
+        {x:2800, y:260, t:'superJump'},   // super pulo perto do boss
       ],
     },
 
@@ -872,6 +929,11 @@ function buildPhase(idx) {
         {x:800,  y:320, t:'crystal'},{x:1100, y:240, t:'heart'},
         {x:1550, y:250, t:'coin'},  {x:2100, y:230, t:'crystal'},
         {x:2700, y:240, t:'heart'}, {x:3150, y:270, t:'key'},
+        // Armas e poderes da Fase 3
+        {x:450,  y:270, t:'speedBoots'},  // velocidade no início
+        {x:1300, y:300, t:'weapon2'},     // tiro duplo no meio
+        {x:2400, y:240, t:'rage'},        // fúria antes do boss
+        {x:3000, y:320, t:'superJump'},   // super pulo na reta final
       ],
     },
 
@@ -917,6 +979,12 @@ function buildPhase(idx) {
         {x:750,  y:310, t:'crystal'},{x:1100, y:240, t:'heart'},
         {x:1600, y:245, t:'crystal'},{x:2150, y:235, t:'coin'},
         {x:2700, y:250, t:'heart'}, {x:3400, y:260, t:'key'},
+        // Armas e poderes da Fase 4
+        {x:500,  y:260, t:'weaponLaser'}, // laser cedo
+        {x:1300, y:245, t:'rage'},        // fúria no meio
+        {x:2200, y:235, t:'weapon2'},     // tiro duplo
+        {x:3200, y:260, t:'speedBoots'},  // velocidade no final
+        {x:3800, y:310, t:'superJump'},   // super pulo antes do boss
       ],
     },
 
@@ -975,6 +1043,15 @@ function buildPhase(idx) {
         {x:1500, y:230, t:'crystal'},{x:1950, y:295, t:'heart'},
         {x:2300, y:235, t:'crystal'},{x:2750, y:235, t:'heart'},
         {x:3200, y:300, t:'coin'},  {x:3700, y:250, t:'key'},
+        // Armas e poderes da Fase 5 (muitos para ajudar na dificuldade)
+        {x:400,  y:310, t:'rage'},
+        {x:900,  y:235, t:'weaponLaser'},
+        {x:1400, y:220, t:'weapon2'},
+        {x:1900, y:295, t:'speedBoots'},
+        {x:2500, y:280, t:'superJump'},
+        {x:3000, y:300, t:'rage'},
+        {x:3500, y:250, t:'weaponLaser'},
+        {x:4000, y:310, t:'speedBoots'},
       ],
     },
   ];
@@ -1114,24 +1191,24 @@ function update() {
 
   // ── Colisão projéteis do jogador → inimigos/chefes ───────
   for (const proj of projs) {
-    if (proj.owner === 'player' || proj.owner === 'magic' || proj.owner === 'special') {
+    if (proj.owner === 'player' || proj.owner === 'magic' || proj.owner === 'special' || proj.owner === 'laser') {
+      const isLaser = proj.owner === 'laser';
 
       for (const e of enemies) {
         if (!e.dead && overlaps(proj, e)) {
           const killed = e.takeDamage(proj.damage);
-          proj.dead = true;
+          if (!isLaser) proj.dead = true;  // laser não para ao acertar
           burst(e.x + e.w / 2, e.y + e.h / 2, e.col, 6);
           playSound('hit');
           if (killed) {
             score += e.pts;
             player.specialCharge = Math.min(100, player.specialCharge + 8);
-            // Chance de soltar item
             if (Math.random() < 0.22) {
               const drop = ['coin', 'heart', 'crystal'][Math.floor(Math.random() * 3)];
               items.push(new Item(e.x + e.w / 2, e.y, drop));
             }
           }
-          break;
+          if (!isLaser) break;
         }
       }
 
@@ -1189,6 +1266,39 @@ function update() {
         case 'shield':
           player.hasShield = true;
           player.shieldTimer = 400;
+          break;
+        // ── Novas armas e poderes coletáveis ─────────────────
+        case 'weapon2':
+          // Tiro duplo: atira dois projéteis lado a lado
+          player.shootPower = Math.max(player.shootPower, 2);
+          player.weaponMode = 'double';
+          powerMsg = '🔫 Tiro Duplo!';
+          powerMsgTimer = 140;
+          break;
+        case 'weaponLaser':
+          // Laser: tiro que atravessa inimigos, dura 15 segundos
+          player.weaponMode = 'laser';
+          player.laserTimer = 900;  // ~15 segundos a 60fps
+          powerMsg = '⚡ Laser Desbloqueado!';
+          powerMsgTimer = 140;
+          break;
+        case 'speedBoots':
+          // Velocidade: move 40% mais rápido por 10 segundos
+          player.speedBoost = 600;
+          powerMsg = '👟 Super Velocidade!';
+          powerMsgTimer = 140;
+          break;
+        case 'superJump':
+          // Super pulo: pulo muito mais alto por 10 segundos
+          player.superJumpTimer = 600;
+          powerMsg = '⬆ Super Pulo!';
+          powerMsgTimer = 140;
+          break;
+        case 'rage':
+          // Fúria: dano dobrado por 8 segundos
+          player.rageTimer = 480;
+          powerMsg = '💢 MODO FÚRIA!';
+          powerMsgTimer = 140;
           break;
       }
     }
@@ -1388,6 +1498,17 @@ function drawPlatforms() {
 // ─────────────────────────────────────────────────────────────
 //  HUD
 // ─────────────────────────────────────────────────────────────
+
+// Etiqueta compacta de poder ativo (canto esquerdo)
+function drawPowerTag(label, timer, color, y) {
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(10, y, 148, 18);
+  ctx.fillStyle = color;
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${label}  (${timer})`, 14, y + 13);
+}
+
 function drawHUD() {
   // ── Barra de vida do Gabriel ────────────────────────────
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -1436,29 +1557,61 @@ function drawHUD() {
   ctx.fillText(`Fase ${currentPhase + 1} — ${phaseData.name}`, W - 10, 22);
   ctx.fillText(`Pontos: ${score}`, W - 10, 40);
 
-  // ── Barra de vida do chefe (embaixo) ─────────────────────
+  // ── Barra de vida do chefe (TOPO, centralizada) ───────────
   const activeBoss = bosses.find(b => !b.dead);
   if (activeBoss) {
-    const bw  = W - 40;
+    const bw     = 360;
+    const bx     = (W - bw) / 2;
+    const by     = 6;
     const bRatio = activeBoss.hp / activeBoss.maxHp;
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(20, H - 78, bw, 32);
-    const bc = activeBoss.type === 'finalBoss' ? '#9b59b6' : '#e74c3c';
+    const bc     = activeBoss.type === 'finalBoss' ? '#9b59b6' : '#e74c3c';
+
+    // Fundo semi-transparente
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(bx - 4, by - 2, bw + 8, 38);
+
+    // Barra colorida
     ctx.fillStyle = bc;
     ctx.shadowColor = bc;
-    ctx.shadowBlur = 12;
-    ctx.fillRect(22, H - 76, (bw - 4) * bRatio, 28);
+    ctx.shadowBlur = 14;
+    ctx.fillRect(bx, by + 16, bw * bRatio, 16);
     ctx.shadowBlur = 0;
+
+    // Borda
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
-    ctx.strokeRect(20, H - 78, bw, 32);
+    ctx.strokeRect(bx, by + 16, bw, 16);
+
+    // Nome e HP do chefe acima da barra
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 13px monospace';
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(`👹 ${activeBoss.label}  ${activeBoss.hp} / ${activeBoss.maxHp}`, W / 2, H - 56);
+    ctx.fillText(`👹 ${activeBoss.label}  ${activeBoss.hp} / ${activeBoss.maxHp}`, W / 2, by + 13);
   }
 
   ctx.textAlign = 'left';
+
+  // ── Indicadores de poderes temporários ativos ────────────
+  let powerY = 80;
+  if (player.speedBoost > 0) {
+    drawPowerTag('👟 Velocidade', `${Math.ceil(player.speedBoost / 60)}s`, '#2ecc71', powerY);
+    powerY += 22;
+  }
+  if (player.superJumpTimer > 0) {
+    drawPowerTag('⬆ Super Pulo', `${Math.ceil(player.superJumpTimer / 60)}s`, '#9b59b6', powerY);
+    powerY += 22;
+  }
+  if (player.rageTimer > 0) {
+    drawPowerTag('💢 Fúria', `${Math.ceil(player.rageTimer / 60)}s`, '#e74c3c', powerY);
+    powerY += 22;
+  }
+  if (player.laserTimer > 0) {
+    drawPowerTag('⚡ Laser', `${Math.ceil(player.laserTimer / 60)}s`, '#00e5ff', powerY);
+    powerY += 22;
+  }
+  if (player.weaponMode === 'double' && player.laserTimer === 0) {
+    drawPowerTag('🔫 Tiro Duplo', 'ativo', '#e67e22', powerY);
+  }
 
   // ── Mensagem de poder desbloqueado ───────────────────────
   if (powerMsgTimer > 0) {
